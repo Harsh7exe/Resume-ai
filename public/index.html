@@ -1,102 +1,39 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RésuméAI</title>
-  <style>
-    :root {
-      --font-family: Arial, sans-serif;
-      --primary-color: #333;
-    }
-    body {
-      font-family: var(--font-family);
-      color: var(--primary-color);
-      margin: 20px;
-      line-height: 1.6;
-    }
-    h1 { text-align: center; }
-    .controls { margin-bottom: 20px; }
-    .section { margin: 20px 0; }
-    textarea { width: 100%; height: 80px; }
-    .preview { margin-top: 10px; padding: 10px; border: 1px solid #ccc; background: #fafafa; }
-    button { margin: 5px; padding: 8px 12px; }
-    label { margin-right: 10px; }
-  </style>
-</head>
-<body>
-  <h1>RésuméAI</h1>
+export default async function handler(req, res) {
+  // Only allow POST
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-  <div class="controls">
-    <label>Profession:</label>
-    <input id="profession" placeholder="e.g., Marketing Agent">
-    <button onclick="promptSection()">Add Section</button>
-    <button onclick="generateResume()">Generate Resume</button>
-    <br><br>
-    <label>Font:</label>
-    <select onchange="document.documentElement.style.setProperty('--font-family', this.value)">
-      <option value="Arial, sans-serif">Arial</option>
-      <option value="Georgia, serif">Georgia</option>
-      <option value="Courier New, monospace">Courier New</option>
-    </select>
-    <label>Color:</label>
-    <input type="color" onchange="document.documentElement.style.setProperty('--primary-color', this.value)">
-  </div>
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "API key not configured" });
+  }
 
-  <div id="resume"></div>
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1000,
+        ...req.body
+      })
+    });
 
-  <script>
-    function promptSection() {
-      const name = prompt("Enter section name (e.g., Certifications)");
-      if (name) addSection(name);
+    if (!response.ok) {
+      const err = await response.text();
+      return res.status(response.status).json({ error: err });
     }
 
-    function addSection(name) {
-      const container = document.getElementById("resume");
-      const section = document.createElement("div");
-      section.className = "section";
-      section.innerHTML = `
-        <h2>${name}</h2>
-        <textarea oninput="updatePreview()"></textarea>
-        <div class="preview"></div>
-      `;
-      container.appendChild(section);
-    }
+    const data = await response.json();
+    return res.status(200).json(data);
 
-    function updatePreview() {
-      document.querySelectorAll(".section").forEach(sec => {
-        const text = sec.querySelector("textarea").value;
-        sec.querySelector(".preview").innerText = text;
-      });
-    }
-
-    async function generateResume() {
-      const profession = document.getElementById("profession").value;
-      const sections = [];
-      document.querySelectorAll(".section").forEach(sec => {
-        sections.push({
-          name: sec.querySelector("h2").innerText,
-          text: sec.querySelector("textarea").value
-        });
-      });
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profession, sections })
-      });
-
-      const data = await res.json();
-
-      // Fill each section individually
-      if (data.sections) {
-        document.querySelectorAll(".section").forEach((sec, i) => {
-          sec.querySelector(".preview").innerText = data.sections[i]?.output || "";
-        });
-      } else {
-        document.getElementById("resume").innerText = data.output;
-      }
-    }
-  </script>
-</body>
-</html>
+  } catch (err) {
+    console.error("Proxy error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
