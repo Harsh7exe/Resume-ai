@@ -459,20 +459,22 @@ function updatePreview() {
 }
 
 // ─── API call (via secure backend proxy) ─────────────────
-async function callAI(prompt, btnId) {
+async function callAI(prompt, btnId, system) {
   const btn = btnId ? document.getElementById(btnId) : null;
   if (btn) btn.disabled = true;
   try {
+    const bodyObj = { messages: [{ role: 'user', content: prompt }] };
+    if (system) bodyObj.system = system;
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: prompt }]
-      })
+      body: JSON.stringify(bodyObj)
     });
-    if (!res.ok) throw new Error('API error ' + res.status);
     const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'API error ' + res.status);
     return data.content?.[0]?.text || '';
+  } catch(e) {
+    throw e;
   } finally {
     if (btn) btn.disabled = false;
   }
@@ -481,77 +483,108 @@ async function callAI(prompt, btnId) {
 function showLoading(id) { document.getElementById(id).classList.add('active'); }
 function hideLoading(id) { document.getElementById(id).classList.remove('active'); }
 
-function toast(msg) {
+function toast(msg, isError) {
   const el = document.getElementById('toast');
   el.textContent = msg;
+  el.style.background = isError ? '#c0392b' : 'var(--ink)';
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2500);
+  setTimeout(() => el.classList.remove('show'), 3500);
 }
 
 // ─── AI Features ─────────────────────────────────────────
 async function enhanceSummary() {
-  const summary = document.getElementById('summary').value;
-  const title = document.getElementById('ptitle').value;
+  const summary = document.getElementById('summary').value.trim();
+  const title = document.getElementById('ptitle').value.trim();
+  const name = (document.getElementById('fname').value + ' ' + document.getElementById('lname').value).trim();
+  if (!summary) { toast('Please write something in the summary first!', true); return; }
   showLoading('lb-summary');
   document.getElementById('ai-summary-out').classList.remove('visible');
   try {
-    const text = await callAI(`Rewrite this professional summary for a ${title} to be compelling, concise (3 sentences max), and ATS-friendly. Use strong action verbs. Return ONLY the rewritten summary, no preamble:\n\n${summary}`, 'btn-enhance');
+    const text = await callAI(
+      `Here is my current professional summary:\n\n"${summary}"\n\nMy name is ${name} and my title is ${title}.\n\nPlease rewrite this into a powerful, interview-winning professional summary that:\n- Is 2-3 sentences max\n- Starts with a strong, specific opener (not generic like "results-driven professional")\n- Highlights my unique value and biggest achievements\n- Uses action-oriented language recruiters love\n- Is optimised for ATS (Applicant Tracking Systems)\n- Feels human and authentic, not robotic\n\nReturn ONLY the rewritten summary text. No labels, no quotes, no explanation.`,
+      'btn-enhance',
+      'You are an expert resume writer with 15 years of experience helping people land jobs at top companies. You write summaries that are specific, compelling, and get interviews.'
+    );
     document.getElementById('ai-summary-text').textContent = text.trim();
     document.getElementById('ai-summary-out').classList.add('visible');
-  } catch(e) { toast('AI request failed. Check your connection.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-summary');
 }
 
 async function rewriteTone(tone) {
-  const summary = document.getElementById('summary').value;
-  const instruction = tone === 'formal' ? 'professional and formal' : 'energetic and dynamic with strong action verbs';
+  const summary = document.getElementById('summary').value.trim();
+  if (!summary) { toast('Please write something in the summary first!', true); return; }
   const btnId = tone === 'formal' ? 'btn-formal' : 'btn-dynamic';
+  const instruction = tone === 'formal'
+    ? 'professional, polished and formal — suitable for corporate, finance or legal roles. Use precise language and avoid casual phrasing.'
+    : 'energetic, bold and dynamic — suitable for startups and creative roles. Use punchy action verbs and show personality.';
   showLoading('lb-summary');
   document.getElementById('ai-summary-out').classList.remove('visible');
   try {
-    const text = await callAI(`Rewrite this summary with a ${instruction} tone. Keep it under 3 sentences. Return ONLY the rewritten text:\n\n${summary}`, btnId);
+    const text = await callAI(
+      `Rewrite this professional summary with a ${instruction}\n\nKeep it 2-3 sentences. Preserve all the key facts and achievements but change the tone completely.\n\nOriginal summary:\n"${summary}"\n\nReturn ONLY the rewritten summary. No labels, no quotes.`,
+      btnId,
+      'You are an expert resume writer who specialises in tone and voice. You adapt writing style perfectly for different industries.'
+    );
     document.getElementById('ai-summary-text').textContent = text.trim();
     document.getElementById('ai-summary-out').classList.add('visible');
-  } catch(e) { toast('AI request failed.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-summary');
 }
 
 async function generateBullets() {
-  const desc = document.getElementById('job1-desc').value;
-  const jobtitle = document.getElementById('job1-title').value;
+  const desc = document.getElementById('job1-desc').value.trim();
+  const jobtitle = document.getElementById('job1-title').value.trim();
+  const company = document.getElementById('job1-company').value.trim();
+  if (!desc) { toast('Please describe your role first!', true); return; }
   showLoading('lb-bullets');
   document.getElementById('ai-bullets-out').classList.remove('visible');
   try {
-    const text = await callAI(`Transform these rough job notes into 4 powerful resume bullet points for a ${jobtitle}. Each bullet: starts with a strong action verb, includes a specific metric or outcome, is ATS-optimised. Return ONLY a numbered list (1. 2. 3. 4.):\n\n${desc}`, 'btn-bullets');
-    document.getElementById('ai-bullets-text').innerHTML = text.trim().split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:5px">${l}</div>`).join('');
+    const text = await callAI(
+      `I worked as a ${jobtitle} at ${company}. Here are my rough notes about what I did:\n\n"${desc}"\n\nTransform these into exactly 4 powerful resume bullet points that will impress recruiters and pass ATS systems.\n\nRules for each bullet:\n- Start with a strong past-tense action verb (e.g. Spearheaded, Engineered, Drove, Launched, Reduced, Grew)\n- Include a specific metric, number, or outcome wherever possible\n- Be concise — one sentence per bullet\n- Show impact, not just tasks\n- Be specific to the ${jobtitle} role\n\nFormat as a simple numbered list:\n1. [bullet]\n2. [bullet]\n3. [bullet]\n4. [bullet]\n\nReturn ONLY the 4 numbered bullets. Nothing else.`,
+      'btn-bullets',
+      'You are a top-tier resume writer who has helped thousands of professionals land jobs at Google, Amazon, and Fortune 500 companies. You write bullet points that are specific, impactful, and quantified.'
+    );
+    document.getElementById('ai-bullets-text').innerHTML = text.trim().split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:6px">${l}</div>`).join('');
     document.getElementById('ai-bullets-out').classList.add('visible');
-  } catch(e) { toast('AI request failed.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-bullets');
 }
 
 async function addMetrics() {
-  const desc = document.getElementById('job1-desc').value;
+  const desc = document.getElementById('job1-desc').value.trim();
+  const jobtitle = document.getElementById('job1-title').value.trim();
+  if (!desc) { toast('Please describe your role first!', true); return; }
   showLoading('lb-bullets');
   document.getElementById('ai-bullets-out').classList.remove('visible');
   try {
-    const text = await callAI(`Add realistic quantitative metrics to these job notes (percentages, team size, revenue impact, time saved). Return 4 bullet points starting with action verbs. Numbered list only:\n\n${desc}`, 'btn-metrics');
-    document.getElementById('ai-bullets-text').innerHTML = text.trim().split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:5px">${l}</div>`).join('');
+    const text = await callAI(
+      `I am a ${jobtitle}. Here are my job responsibilities:\n\n"${desc}"\n\nRewrite these as 4 resume bullet points with realistic, believable quantitative metrics added. For example:\n- "managed a team" → "Managed a team of 8 engineers, reducing sprint cycle time by 20%"\n- "improved sales" → "Grew quarterly sales by 35% through targeted outreach campaigns"\n\nMake the numbers specific and realistic for a ${jobtitle} role. Each bullet must start with a strong action verb.\n\nFormat:\n1. [bullet with metric]\n2. [bullet with metric]\n3. [bullet with metric]\n4. [bullet with metric]\n\nReturn ONLY the 4 numbered bullets.`,
+      'btn-metrics',
+      'You are an expert resume writer who specialises in quantifying achievements. You know what realistic metrics look like for different roles and industries.'
+    );
+    document.getElementById('ai-bullets-text').innerHTML = text.trim().split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:6px">${l}</div>`).join('');
     document.getElementById('ai-bullets-out').classList.add('visible');
-  } catch(e) { toast('AI request failed.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-bullets');
 }
 
 async function matchJD() {
-  const desc = document.getElementById('job1-desc').value;
-  const jd = document.getElementById('jd-input')?.value || '';
-  if (!jd.trim()) { toast('Paste a job description in the Skills tab first!'); return; }
+  const desc = document.getElementById('job1-desc').value.trim();
+  const jd = document.getElementById('jd-input')?.value.trim() || '';
+  if (!desc) { toast('Please describe your role first!', true); return; }
+  if (!jd) { toast('Paste a job description in the Skills tab first!', true); return; }
   showLoading('lb-bullets');
   document.getElementById('ai-bullets-out').classList.remove('visible');
   try {
-    const text = await callAI(`Rewrite these job notes as 4 resume bullets that mirror keywords and requirements from this job description. ATS-optimised. Numbered list only.\n\nJob notes: ${desc}\n\nJob description: ${jd}`, 'btn-matchjd');
-    document.getElementById('ai-bullets-text').innerHTML = text.trim().split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:5px">${l}</div>`).join('');
+    const text = await callAI(
+      `I need to tailor my resume bullets to match a specific job description.\n\nMY EXPERIENCE:\n"${desc}"\n\nTARGET JOB DESCRIPTION:\n"${jd}"\n\nWrite 4 resume bullet points that:\n- Use the exact keywords and phrases from the job description (for ATS matching)\n- Highlight the experiences most relevant to this specific role\n- Start each with a strong action verb\n- Include metrics where possible\n- Show I am a perfect fit for this role\n\nFormat:\n1. [bullet]\n2. [bullet]\n3. [bullet]\n4. [bullet]\n\nReturn ONLY the 4 numbered bullets.`,
+      'btn-matchjd',
+      'You are an expert at tailoring resumes to specific job descriptions. You know exactly which keywords ATS systems look for and how to position experience to match job requirements perfectly.'
+    );
+    document.getElementById('ai-bullets-text').innerHTML = text.trim().split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:6px">${l}</div>`).join('');
     document.getElementById('ai-bullets-out').classList.add('visible');
-  } catch(e) { toast('AI request failed.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-bullets');
 }
 
@@ -560,59 +593,70 @@ function applyBullets() {
   DATA.bullets = rawText.split('\n').filter(l=>l.trim()).map(l=>l.replace(/^\d+\.\s*/,'').trim()).filter(Boolean);
   document.getElementById('ai-bullets-out').classList.remove('visible');
   updatePreview();
-  toast('Bullets applied!');
+  toast('✓ Bullets applied to your resume!');
 }
 
 async function extractSkills() {
-  const jd = document.getElementById('jd-input').value;
-  if (!jd.trim()) { toast('Please paste a job description first.'); return; }
+  const jd = document.getElementById('jd-input').value.trim();
+  if (!jd) { toast('Please paste a job description first!', true); return; }
   showLoading('lb-skills');
   document.getElementById('ai-skills-out').classList.remove('visible');
   try {
-    const text = await callAI(`Extract the 8-10 most important hard and soft skills from this job description for ATS optimisation. Return ONLY a comma-separated list:\n\n${jd}`, 'btn-extract');
+    const text = await callAI(
+      `Analyse this job description and extract the most important skills for ATS optimisation:\n\n"${jd}"\n\nExtract:\n- Technical/hard skills (tools, technologies, methodologies)\n- Soft skills that are explicitly mentioned\n- Industry-specific keywords\n\nReturn 10-12 skills as a clean comma-separated list. Prioritise the most important ones first. Use the exact phrasing from the job description where possible.\n\nReturn ONLY the comma-separated list. No explanation, no numbering, no bullet points.`,
+      'btn-extract',
+      'You are an ATS expert who knows exactly which keywords hiring systems look for. You extract the most impactful skills that will get a resume noticed.'
+    );
     document.getElementById('ai-skills-text').textContent = text.trim();
     document.getElementById('ai-skills-out').classList.add('visible');
-  } catch(e) { toast('AI request failed.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-skills');
 }
 
 function applySkills() {
-  const newSkills = document.getElementById('ai-skills-text').textContent;
+  const newSkills = document.getElementById('ai-skills-text').textContent.trim();
   const current = document.getElementById('skills-input').value.trim();
-  document.getElementById('skills-input').value = current ? current + ', ' + newSkills : newSkills;
+  // Merge and deduplicate
+  const all = [...new Set([...current.split(','), ...newSkills.split(',')].map(s=>s.trim()).filter(Boolean))];
+  document.getElementById('skills-input').value = all.join(', ');
   document.getElementById('ai-skills-out').classList.remove('visible');
   updatePreview();
-  toast('Skills added!');
+  toast('✓ Skills added to your resume!');
 }
 
 async function runAtsCheck() {
-  const role = document.getElementById('target-role').value;
-  const summary = document.getElementById('summary')?.value || '';
-  const skills = document.getElementById('skills-input')?.value || '';
-  const bullets = DATA.bullets.join(' ');
+  const role = document.getElementById('target-role').value.trim();
+  const summary = document.getElementById('summary')?.value.trim() || '';
+  const skills = document.getElementById('skills-input')?.value.trim() || '';
+  const bullets = DATA.bullets.join('\n');
+  if (!role) { toast('Please enter a target job title first!', true); return; }
   showLoading('lb-ats');
   document.getElementById('ats-results').style.display = 'none';
   try {
-    const text = await callAI(`Evaluate this resume for ATS compatibility for the role: "${role}". Give:\n1. A score out of 100\n2. 3 specific actionable improvements\nFormat EXACTLY as:\nSCORE: [number]\nFEEDBACK:\n[3 bullet points]\n\nSummary: ${summary}\nBullets: ${bullets}\nSkills: ${skills}`, 'btn-ats');
+    const text = await callAI(
+      `Please analyse this resume for the role of "${role}" and give an honest ATS compatibility assessment.\n\nRESUME CONTENT:\nSummary: ${summary}\n\nExperience bullets:\n${bullets}\n\nSkills: ${skills}\n\nProvide:\n1. An ATS match score out of 100 (be honest and realistic)\n2. Exactly 3 specific, actionable improvements with clear examples\n\nFormat your response EXACTLY like this (keep the labels):\nSCORE: [number only]\nFEEDBACK:\n• [Specific improvement 1 with example]\n• [Specific improvement 2 with example]\n• [Specific improvement 3 with example]\n\nBe specific — don't give vague advice like "add more keywords". Tell them exactly WHICH keywords to add.`,
+      'btn-ats',
+      'You are a senior recruiter and ATS expert who has reviewed thousands of resumes. You give honest, specific, actionable feedback that actually helps people get interviews.'
+    );
 
     const scoreMatch = text.match(/SCORE:\s*(\d+)/i);
-    const score = scoreMatch ? parseInt(scoreMatch[1]) : 72;
+    const score = scoreMatch ? parseInt(scoreMatch[1]) : 65;
     const feedbackMatch = text.match(/FEEDBACK:\n?([\s\S]+)/i);
     const feedback = feedbackMatch ? feedbackMatch[1].trim() : text;
 
     const color = score >= 80 ? '#2E7D32' : score >= 60 ? '#E65100' : '#C62828';
     const bg = score >= 80 ? '#E8F5E9' : score >= 60 ? '#FFF3E0' : '#FFEBEE';
     const barColor = score >= 80 ? '#4CAF50' : score >= 60 ? '#FF9800' : '#F44336';
-    const label = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : 'Needs work';
+    const label = score >= 80 ? 'Excellent ✓' : score >= 60 ? 'Good — needs tweaks' : 'Needs improvement';
 
     document.getElementById('ats-circle').style.cssText = `background:${bg};color:${color};width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:500;flex-shrink:0`;
     document.getElementById('ats-circle').textContent = score;
     document.getElementById('ats-val').textContent = `${score}/100 — ${label}`;
     document.getElementById('ats-bar').style.width = score + '%';
     document.getElementById('ats-bar').style.background = barColor;
-    document.getElementById('ats-feedback-text').innerHTML = feedback.split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:6px">${l}</div>`).join('');
+    document.getElementById('ats-feedback-text').innerHTML = feedback.split('\n').filter(l=>l.trim()).map(l=>`<div style="margin-bottom:8px">${l}</div>`).join('');
     document.getElementById('ats-results').style.display = 'flex';
-  } catch(e) { toast('AI request failed.'); }
+  } catch(e) { toast('Error: ' + e.message, true); }
   hideLoading('lb-ats');
 }
 
@@ -621,12 +665,12 @@ function applySuggestion() {
   document.getElementById('summary').value = text;
   document.getElementById('ai-summary-out').classList.remove('visible');
   updatePreview();
-  toast('Summary updated!');
+  toast('✓ Summary updated!');
 }
 
 function copyResume() {
   const text = document.getElementById('resume-preview').innerText;
-  navigator.clipboard.writeText(text).then(() => toast('Resume copied to clipboard!'));
+  navigator.clipboard.writeText(text).then(() => toast('✓ Resume copied to clipboard!'));
 }
 
 // Init
