@@ -1,4 +1,6 @@
+// api/chat.js
 export default async function handler(req, res) {
+  // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -10,12 +12,20 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not set in environment variables" });
 
   try {
-    const { messages, system } = req.body;
-    if (!messages || !Array.isArray(messages)) {
-      return res.status(400).json({ error: "messages array is required" });
-    }
+    const { role, messages, system } = req.body;
 
-    const prompt = (system ? system + "\n\n" : "") + messages.map(m => m.content).join("\n");
+    // Build prompt: role + system + messages
+    let prompt = "";
+    if (role) {
+      prompt += `Generate a complete professional résumé tailored for the role: ${role}.\n\n`;
+      prompt += `Include sections like Summary, Skills, Experience, Education, and Projects. Format it cleanly.\n\n`;
+    }
+    if (system) {
+      prompt += system + "\n\n";
+    }
+    if (messages && Array.isArray(messages)) {
+      prompt += messages.map(m => m.content).join("\n");
+    }
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
